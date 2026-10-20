@@ -78,3 +78,38 @@ def draw(img, f, t, label=None, ball=True):
     if label:
         cv2.putText(out, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
     return out
+
+
+def action_centre(f, t, df=None):
+    """Pixel centre of the action: the ball if tracked, else the players' centroid."""
+    if not np.isnan(t["bx"][f]):
+        return project(f, t["bx"][f], t["by"][f])
+    ok = ~np.isnan(t["px"][f])
+    xs, ys = project(f, t["px"][f][ok], t["py"][f][ok])
+    return float(np.median(xs)), float(np.median(ys))
+
+
+def sheet(v, t, frames, cols=3, crop=(560, 315), labels=None, overlay=False):
+    """Grid of crops around the action, one per frame, each captioned."""
+    w, h = crop
+    tiles = []
+    last_c = None
+    for i, f in enumerate(frames):
+        img = v.frame(f)
+        if overlay:
+            img = draw(img, f, t)
+        cx, cy = action_centre(f, t)
+        if np.isnan(cx):
+            cx, cy = last_c if last_c else (640, 360)
+        last_c = (cx, cy)
+        x0 = int(np.clip(cx - w / 2, 0, 1280 - w))
+        y0 = int(np.clip(cy - h / 2, 0, 720 - h))
+        tile = img[y0:y0 + h, x0:x0 + w].copy()
+        cap = "%d %s" % (f, labels[i] if labels is not None else "")
+        cv2.rectangle(tile, (0, 0), (w, 24), (0, 0, 0), -1)
+        cv2.putText(tile, cap, (5, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        tiles.append(tile)
+    while len(tiles) % cols:
+        tiles.append(np.zeros_like(tiles[0]))
+    rows = [np.hstack(tiles[r:r + cols]) for r in range(0, len(tiles), cols)]
+    return np.vstack(rows)

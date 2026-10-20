@@ -122,6 +122,24 @@ def hmm_dead_probability(df, dx, cfg):
     return np.nan_to_num(p, nan=1.0), model
 
 
+def restart_teams(df, alive, cfg):
+    """Team taking each restart (first frame of every live stretch). The two kick-offs follow the
+    Laws of the Game: whoever kicks off the first half does not kick off the second."""
+    t = data.load_tracking()
+    out = {}
+    for start, _ in features.runs(alive):
+        if start in (data.HALVES[0][0], data.SECOND_HALF_KICKOFF):
+            continue
+        tm, _rule = team.infer_restart(df, t, start)
+        if tm >= 0:
+            out[start] = tm
+    first = team.restart_team(df, data.HALVES[0][0], before=0, after=25)
+    if first >= 0:
+        out[data.HALVES[0][0]] = first
+        out[data.SECOND_HALF_KICKOFF] = 1 - first
+    return out
+
+
 def run(cfg=None, exclude=None):
     cfg = dict(CONFIG, **(cfg or {}))
     df, dx = load_features()
@@ -134,7 +152,11 @@ def run(cfg=None, exclude=None):
     else:
         p_dead, episodes = dead_probability(df, dx, exclude)
         alive = alive_dead(df, dx, p_dead, episodes, cfg) & df.graded.values
+    # Published: the second half is graded from 110808 but kicks off at 113742.
+    alive[data.HALVES[1][0]:data.SECOND_HALF_KICKOFF] = False
+    alive[data.SECOND_HALF_KICKOFF] = True
+    initial = restart_teams(df, alive, cfg)
     ctrl = team.control(df, cfg["ctrl_radius"])
-    labels = team.hysteresis(ctrl, alive, cfg["ctrl_frames"])
+    labels = team.hysteresis(ctrl, alive, cfg["ctrl_frames"], initial)
     labels[~df.graded.values] = team.X
     return labels, {"p_dead": p_dead, "alive": alive, "episodes": episodes}

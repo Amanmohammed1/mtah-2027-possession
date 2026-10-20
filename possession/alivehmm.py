@@ -114,8 +114,9 @@ def _forward_backward(logB, T, pi):
 
 
 class AliveDeadHMM:
-    def __init__(self, k_dead=6, p_stop=0.01, p_restart=0.02):
+    def __init__(self, k_dead=6, p_stop=0.01, p_restart=0.02, cap=np.inf):
         self.k_dead = k_dead
+        self.cap = cap
         self.T = transition(k_dead, p_stop, p_restart)
         self.emis = None  # list per channel of (2, bins) probability tables
 
@@ -130,10 +131,16 @@ class AliveDeadHMM:
             self.emis.append(table / table.sum(1, keepdims=True))
 
     def log_emission(self, obs):
+        """Naive-Bayes emissions, with each channel's dead-vs-alive log-ratio capped at
+        +/- self.cap so that no single signal (e.g. slow players at a slow restart) can veto
+        all the others."""
         n = len(obs)
         le = np.zeros((n, 2))
         for c, table in enumerate(self.emis):
-            le += np.log(table[:, obs[:, c]].T)
+            la = np.log(table[0, obs[:, c]])
+            ld = np.log(table[1, obs[:, c]])
+            le[:, 0] += la
+            le[:, 1] += la + np.clip(ld - la, -self.cap, self.cap)
         s = self.k_dead + 1
         out = np.empty((n, s))
         out[:, 0] = le[:, 0]

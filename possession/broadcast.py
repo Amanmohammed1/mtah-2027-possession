@@ -148,14 +148,32 @@ def align(step_anchor=50, step_cand=5, good_cost=1.2):
     return out
 
 
-def offset_per_frame(al, window=1501):
-    """Robust tactical-minus-broadcast offset for every broadcast frame (rolling median of the
-    confident matches, nearest-filled)."""
+def offset_per_frame(al, max_cost=0.8, tol=3):
+    """Tactical-minus-broadcast offset for every broadcast frame: one constant per half.
+
+    The broadcast clock runs in step with the tactical one, so within a half the offset is a
+    single number. Replays match the earlier moment they show and must not move it, which is
+    why this is the median of the matches near the two dominant offsets rather than a rolling
+    estimate.
+    """
     t = al.tac_frame.values
-    ok = (t >= 0) & (al.cost.values < 0.8)
-    off = pd.Series(np.where(ok, t - np.arange(len(t)), np.nan))
-    med = off.rolling(window, center=True, min_periods=25).median()
-    return med.ffill().bfill().round().astype(np.int64).values
+    ok = (t >= 0) & (al.cost.values < max_cost)
+    b = np.arange(len(t))
+    o = t - b
+    vals, cnt = np.unique(o[ok], return_counts=True)
+    m1 = vals[np.argmax(cnt)]
+    far = np.abs(vals - m1) > 1000
+    m2 = vals[far][np.argmax(cnt[far])]
+    halves = []
+    for m in (m1, m2):
+        sel = ok & (np.abs(o - m) <= tol)
+        halves.append((np.median(b[sel]), int(np.round(np.median(o[sel]))), b[sel].min(), b[sel].max()))
+    halves.sort()
+    split = (halves[0][3] + halves[1][2]) // 2
+    out = np.empty(len(t), dtype=np.int64)
+    out[:split] = halves[0][1]
+    out[split:] = halves[1][1]
+    return out
 
 
 def on_tactical(n_tac=data.N_FRAMES):

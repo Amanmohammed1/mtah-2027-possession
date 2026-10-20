@@ -20,6 +20,8 @@ CONFIG = {
     "alive_fast_bonus": 1.0, # per-frame log-evidence for alive when the ball is moving in bounds
     "dead_model": "hmm",     # "hmm" (EM alive/dead HMM) or "lgb" (pseudo-label classifier)
     "hmm_k_dead": 15,        # dead sub-states at 5 Hz -> minimum stoppage of 3 s
+    "hmm_llr_cap": 2.0,      # cap on any one channel's dead-vs-alive log-ratio per step
+    "min_live_no_team": 75,  # live slivers shorter than this with no team at all are dead
     "hmm_use_public": True,  # add the public 5-minute labels as fixed counts to EM
     "dead_threshold": 0.5,
     "onset_shift": 60,       # frames the stoppage evidence trails the whistle when no line is crossed
@@ -107,7 +109,7 @@ def hmm_dead_probability(df, dx, cfg):
     obs = alivehmm.observations(df, dx, broadcast.on_tactical(n), data.load_smart_tagging())
     seqs, idxs = alivehmm.halves_obs(obs)
     gt = None
-    model = alivehmm.AliveDeadHMM(k_dead=cfg["hmm_k_dead"])
+    model = alivehmm.AliveDeadHMM(k_dead=cfg["hmm_k_dead"], cap=cfg["hmm_llr_cap"])
     from . import score
     gt = score.public_gt()
     pub = gt != 3
@@ -158,5 +160,10 @@ def run(cfg=None, exclude=None):
     initial = restart_teams(df, alive, cfg)
     ctrl = team.control(df, cfg["ctrl_radius"])
     labels = team.hysteresis(ctrl, alive, cfg["ctrl_frames"], initial)
+    # A short live sliver where nobody ever has the ball, between two stoppages, is the HMM
+    # flickering inside one stoppage rather than play.
+    for start, stop in features.runs(alive):
+        if stop - start < cfg["min_live_no_team"] and np.all(labels[start:stop] == team.X):
+            labels[start:stop] = team.D
     labels[~df.graded.values] = team.X
     return labels, {"p_dead": p_dead, "alive": alive, "episodes": episodes}

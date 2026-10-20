@@ -116,3 +116,64 @@ def smart_tag_features(tags, n):
     nxt = np.where(pos < len(starts), starts[np.minimum(pos, len(starts) - 1)] - idx, 10 ** 5)
     prv = np.where(pos > 0, idx - starts[np.maximum(pos - 1, 0)], 10 ** 5)
     return pd.DataFrame({"sp_next": np.minimum(nxt, 3000), "sp_prev": np.minimum(prv, 3000)})
+
+
+def broadcast_features(bt):
+    """Is the TV director showing live play? Cuts to close-ups and replays mark stoppages."""
+    live = np.where(bt.bro_has.values, bt.bro_live.values.astype(np.float64), np.nan)
+    o = {"bro_has": bt.bro_has.values.astype(np.float64)}
+    for w in (25, 75, 150, 300):
+        o["live_m%d" % w] = nan_smooth(live, w)
+    for w in (75, 250):
+        o["live_past%d" % w] = _past(live, w)
+        o["live_fut%d" % w] = _future(live, w)
+    return pd.DataFrame(o)
+
+
+def refine_boundaries(df, dead, onset_shift=0, search_back=250, search_fwd=50, kick_window=50):
+    """Sharpen the edges of predicted stoppages.
+
+    Onset: if the visible ball crossed a line shortly before (or just after) the predicted
+    onset, the stoppage starts at the crossing. Otherwise the evidence the model relies on --
+    players slowing, the broadcast cutting away -- trails the whistle, so the onset is pulled
+    back by `onset_shift` frames.
+    Restart: if the visible ball is struck from (near) rest close to the predicted restart, the
+    stoppage ends on that frame.
+    """
+    n = len(dead)
+    out = dead.copy()
+    seen = df.ball_ok.values
+    ball_out = df.ball_out.values
+    speed = df.ball_v.values
+    for a, b in runs(dead):
+        # onset
+        lo, hi = max(0, a - search_back), min(n - 1, a + search_fwd)
+        # The earliest crossing in the window where the ball then stays out for >= 5 frames.
+        crossing = None
+        for f in range(lo + 1, hi - 8):
+            if seen[f - 1] and ball_out[f - 1] <= 0 and seen[f] and ball_out[f] > 0 \
+                    and np.all(seen[f + 3:f + 8]) and np.all(ball_out[f + 3:f + 8] > 0.3):
+                crossing = f
+                break
+        if crossing is not None and crossing < b:
+            new_a = crossing
+        else:
+            new_a = max(0, a - onset_shift)
+        out[new_a:a] = True
+        if new_a > a:
+            out[a:new_a] = False
+        # restart
+        lo, hi = max(new_a + 1, b - kick_window), min(n - 1, b + kick_window)
+        kick = None
+        best = 0.0
+        for f in range(lo, hi):
+            if seen[f] and seen[f - 3] and speed[f - 3] < 2.0 and speed[f] > 5.0 and ball_out[f] < 1.0:
+                jump = speed[f] - speed[f - 3]
+                if jump > best:
+                    best, kick = jump, f - 3
+        if kick is not None:
+            if kick < b:
+                out[kick:b] = False
+            else:
+                out[b:kick] = True
+    return out

@@ -2,7 +2,7 @@ import numpy as np, sys
 sys.path.insert(0, ".")
 from possession import pipeline, score, data, features
 pub = np.zeros(data.N_FRAMES, bool); pub[11185:18685] = True
-labels, info = pipeline.run(exclude=pub)
+labels, info = pipeline.run(dict(hmm_use_public=False), exclude=pub)
 print("public:", score.fmt(score.score(labels)))
 g = data.graded_mask()
 lab = labels[g]

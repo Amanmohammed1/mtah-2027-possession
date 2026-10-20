@@ -6,7 +6,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from . import data, deadball, decode, features, team
+from . import alivehmm, broadcast, data, deadball, decode, features, team
 
 D_PARAMS = dict(objective="binary", learning_rate=0.05, num_leaves=15, min_data_in_leaf=1000,
                 feature_fraction=0.7, bagging_fraction=0.7, bagging_freq=1, lambda_l2=10.0,
@@ -18,6 +18,11 @@ CONFIG = {
     "dead_switch": 20.0,     # Viterbi cost of an alive <-> dead switch
     "dead_out_bonus": 5.0,   # per-frame log-evidence for D inside an out-of-bounds stoppage
     "alive_fast_bonus": 1.0, # per-frame log-evidence for alive when the ball is moving in bounds
+    "dead_model": "hmm",     # "hmm" (EM alive/dead HMM) or "lgb" (pseudo-label classifier)
+    "hmm_k_dead": 15,        # dead sub-states at 5 Hz -> minimum stoppage of 3 s
+    "hmm_use_public": True,  # add the public 5-minute labels as fixed counts to EM
+    "dead_threshold": 0.5,
+    "onset_shift": 60,       # frames the stoppage evidence trails the whistle when no line is crossed
 }
 
 
@@ -37,12 +42,16 @@ def load_features():
     dx = cached("dead_features.parquet", lambda: pd.concat(
         [deadball.window_features(df), deadball.smart_tag_features(data.load_smart_tagging(), n)],
         axis=1))
-    return df, dx
+    bx = cached("broadcast_features.parquet",
+                lambda: deadball.broadcast_features(broadcast.on_tactical(n)))
+    return df, pd.concat([dx, bx], axis=1)
 
 
 DEAD_VIEW = ["spd_m25", "spd_m75", "spd_m150", "spd_m300", "spd_past75", "spd_fut75",
              "spd_past250", "spd_fut250", "spd_p90_m75", "n_players", "sx_sum", "sy_sum",
-             "sp_next", "sp_prev"]
+             "sp_next", "sp_prev",
+             "bro_has", "live_m25", "live_m75", "live_m150", "live_m300", "live_past75",
+             "live_fut75", "live_past250", "live_fut250"]
 
 
 def dead_pseudo_labels(df, dx, exclude=None):
@@ -93,11 +102,38 @@ def alive_dead(df, dx, p_dead, episodes, cfg):
     return np.isin(path, (0, 1))
 
 
+def hmm_dead_probability(df, dx, cfg):
+    n = len(df)
+    obs = alivehmm.observations(df, dx, broadcast.on_tactical(n), data.load_smart_tagging())
+    seqs, idxs = alivehmm.halves_obs(obs)
+    gt = None
+    model = alivehmm.AliveDeadHMM(k_dead=cfg["hmm_k_dead"])
+    from . import score
+    gt = score.public_gt()
+    pub = gt != 3
+    model.init_from_labels(obs[pub], (gt[pub] == 2).astype(int))
+    fixed = None
+    if cfg["hmm_use_public"]:
+        fixed = [np.stack([np.bincount(obs[pub & (gt != 2), c], minlength=nb),
+                           np.bincount(obs[pub & (gt == 2), c], minlength=nb)]).astype(float)
+                 for c, nb in enumerate(alivehmm.n_bins())]
+    model.fit(seqs, iters=15, fixed_counts=fixed)
+    p = alivehmm.upsample([model.dead_probability(s) for s in seqs], idxs, n)
+    return np.nan_to_num(p, nan=1.0), model
+
+
 def run(cfg=None, exclude=None):
     cfg = dict(CONFIG, **(cfg or {}))
     df, dx = load_features()
-    p_dead, episodes = dead_probability(df, dx, exclude)
-    alive = alive_dead(df, dx, p_dead, episodes, cfg) & df.graded.values
+    if cfg["dead_model"] == "hmm":
+        p_dead, _ = hmm_dead_probability(df, dx, cfg)
+        dead = (p_dead >= cfg["dead_threshold"]) & df.graded.values
+        dead = deadball.refine_boundaries(df, dead, onset_shift=cfg["onset_shift"])
+        alive = ~dead & df.graded.values
+        episodes = None
+    else:
+        p_dead, episodes = dead_probability(df, dx, exclude)
+        alive = alive_dead(df, dx, p_dead, episodes, cfg) & df.graded.values
     ctrl = team.control(df, cfg["ctrl_radius"])
     labels = team.hysteresis(ctrl, alive, cfg["ctrl_frames"])
     labels[~df.graded.values] = team.X

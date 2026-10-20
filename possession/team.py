@@ -109,3 +109,4 @@ def infer_restart(df, t, start, before=50, after=3, crowd=9):
         if n_box >= crowd:
             return (HOME if side == sign else AWAY), "crowd"
     return -1, "none"
+

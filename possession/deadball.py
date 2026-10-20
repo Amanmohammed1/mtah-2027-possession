@@ -7,6 +7,7 @@ from . import data
 from .features import nan_smooth, runs
 
 FPS = data.FPS
+HALF_L_M, HALF_W_M = data.PITCH[0] / 2.0, data.PITCH[1] / 2.0
 
 
 def restart_after(df, start, limit=60 * FPS, min_speed=6.0, in_margin=1.5):
@@ -130,7 +131,40 @@ def broadcast_features(bt):
     return pd.DataFrame(o)
 
 
-def refine_boundaries(df, dead, onset_shift=0, search_back=250, search_fwd=50, kick_window=50):
+def _exit(df, lo, hi, max_dist=3.0, min_speed=2.0, gone=10, on_line=0.3, live_p90=2.5):
+    """Frame where the ball left the pitch unseen: the last sighting in [lo, hi) within
+    `max_dist` m of a line and moving towards it (or already on / over the line), after which
+    the ball is not seen for `gone` frames. The crossing is extrapolated from the outward speed
+    (at most one second later).
+
+    Only an exit from live play counts: the fastest tenth of the players must still have been
+    running (> `live_p90` m/s) in the two seconds before. After a whistle the ball often rolls
+    out while everybody has already stopped, and that exit is a consequence, not the cause."""
+    seen = df.ball_ok.values
+    bx, by = df.bx.values, df.by.values
+    p90 = df.spd_p90.values
+    for f in range(hi - 1, lo + 3, -1):
+        if not (seen[f] and seen[f - 3]) or seen[f + 1:f + 1 + gone].any():
+            continue
+        dist_x = (HALF_L_M - abs(bx[f]))
+        dist_y = (HALF_W_M - abs(by[f]))
+        vx = (bx[f] - bx[f - 3]) * FPS / 3.0
+        vy = (by[f] - by[f - 3]) * FPS / 3.0
+        if dist_x < dist_y:
+            dist, outward = dist_x, vx * np.sign(bx[f])
+        else:
+            dist, outward = dist_y, vy * np.sign(by[f])
+        if np.nanmean(p90[max(0, f - 50):f]) <= live_p90:
+            continue
+        if dist <= on_line:
+            return f
+        if dist < max_dist and outward > min_speed:
+            return f + int(min(FPS, dist / outward * FPS))
+    return None
+
+
+def refine_boundaries(df, dead, onset_shift=0, search_back=250, search_fwd=50, kick_window=50,
+                      exit_back=150, exit_fwd=25):
     """Sharpen the edges of predicted stoppages.
 
     Onset: if the visible ball crossed a line shortly before (or just after) the predicted
@@ -155,6 +189,8 @@ def refine_boundaries(df, dead, onset_shift=0, search_back=250, search_fwd=50, k
                     and np.all(seen[f + 3:f + 8]) and np.all(ball_out[f + 3:f + 8] > 0.3):
                 crossing = f
                 break
+        if crossing is None:
+            crossing = _exit(df, max(0, a - exit_back), min(n - 12, a + exit_fwd))
         if crossing is not None and crossing < b:
             new_a = crossing
         else:

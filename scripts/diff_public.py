@@ -3,7 +3,7 @@ sys.path.insert(0, ".")
 from possession import pipeline, score, data
 import possession_metrics as pm
 pub = np.zeros(data.N_FRAMES, bool); pub[11185:18685] = True
-labels, info = pipeline.run(exclude=pub)
+labels, info = pipeline.run(dict(hmm_use_public=False))
 gt = score.public_gt()
 runs = [(11185, 18685)]
 filled = pm.fill_abstentions(labels, runs)

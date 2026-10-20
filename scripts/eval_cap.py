@@ -4,7 +4,7 @@ from possession import pipeline, score, data, features
 pub = np.zeros(data.N_FRAMES, bool); pub[11185:18685] = True
 gt = score.public_gt(); g = data.graded_mask()
 for cap in (1.5, 1.0):
-    lab, info = pipeline.run(dict(hmm_use_public=False, hmm_llr_cap=cap), exclude=pub)
+    lab, info = pipeline.run(dict(hmm_use_public=False, hmm_llr_cap=cap))
     s = score.score(lab, gt)
     segs = features.runs((lab == 2) & g)
     r = [b for a, b in segs if 57000 < b < 63000]

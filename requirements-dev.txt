@@ -1,1 +1,6 @@
+# Only for the validation tools and exploratory scripts, not for producing the submission.
+-r requirements.txt
 opencv-python-headless==4.10.0.84
+lightgbm==4.6.0
+scikit-learn==1.6.1
+matplotlib==3.10.0

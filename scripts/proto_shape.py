@@ -2,7 +2,7 @@ import numpy as np, pandas as pd, sys, lightgbm as lgb
 sys.path.insert(0, ".")
 from possession import data, features, score, pipeline
 pub = np.zeros(data.N_FRAMES, bool); pub[11185:18685] = True
-labels, info = pipeline.run(exclude=pub)
+labels, info = pipeline.run(dict(hmm_use_public=False))
 df, dx = pipeline.load_features()
 S = features.shape_features(df)
 S.to_parquet("cache/shape_features.parquet")

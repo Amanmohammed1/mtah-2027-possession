@@ -135,6 +135,12 @@ The labels never enter the pipeline; they decide between variants.
   balls skimming the line, where the HMM was right.
 - **Broadcast tracking for control:** its near-ball positions agree with the ground truth less
   often than the tactical ones (0.87 vs 0.91).
+- **Merging brief back-and-forth possessions (< 1 s):** removed most of the duel flickers we
+  judged false on video, but the public ground truth itself contains such a possession in a
+  duel; the scorer counts them, so we kept them.
+- **Counting control only when the ball is slow** (to ignore balls in the air) or **only where
+  the broadcast tracking agrees:** cleaner control frames, but real switches were lost with the
+  false ones.
 - **A wider (6 m) nearest-player pass for restarts:** decided few restarts and got one of the
   labelled ones wrong.
 

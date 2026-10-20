@@ -15,8 +15,8 @@ until the other team holds it.
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ln -s /path/to/the/data/bundle data          # or: export MTAH_DATA_DIR=/path/to/the/data/bundle
-.venv/bin/python run.py                      # -> out/submission.csv, ~40 s, deterministic
-.venv/bin/python evaluation/validate_submission.py out/submission.csv
+.venv/bin/python run.py                      # -> out/Yamal_Fan_Boys.csv, ~40 s, deterministic
+.venv/bin/python evaluation/validate_submission.py out/Yamal_Fan_Boys.csv
 ```
 
 The data bundle is the one distributed to participants (`TACTICAL/` and `BROADCAST/`; the folder
@@ -28,7 +28,7 @@ Developed and checked on Python 3.12, macOS arm64; a fresh clone reproduces the 
 ## Layout
 
 ```
-run.py                     regenerates out/submission.csv
+run.py                     regenerates out/Yamal_Fan_Boys.csv
 possession/
   data.py                  loading the provided assets (tracking, Smart Tagging, homography)
   features.py              per-frame features: ball kinematics, proximity, player speeds

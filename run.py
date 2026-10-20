@@ -12,7 +12,7 @@ from possession import data, pipeline
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--out", default="out/submission.csv")
+    parser.add_argument("--out", default="out/Yamal_Fan_Boys.csv")
     args = parser.parse_args()
     labels, _ = pipeline.run()
     path = data.write_submission(args.out, labels)

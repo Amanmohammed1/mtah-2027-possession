@@ -12,6 +12,8 @@ from googleapiclient.errors import HttpError
 
 auth.authenticate_user()
 svc = build('drive', 'v3')
+# Google Drive file IDs of the two match videos you were given (the part after /d/ in
+# each share link). They are not published here: the data is not redistributable.
 IDS = ['PASTE_TACTICAL_VIDEO_ID', 'PASTE_BROADCAST_VIDEO_ID']
 meta = {fid: svc.files().get(fileId=fid, fields='name,size', supportsAllDrives=True).execute() for fid in IDS}
 TAC_ID = [fid for fid, m in meta.items() if 'tactical' in m['name'].lower()][0]

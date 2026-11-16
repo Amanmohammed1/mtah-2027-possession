@@ -13,14 +13,14 @@ We split the task in two, because the two halves fail in different ways:
    automatic observations. The edges of each stoppage are then moved to the moment the ball left
    the pitch (seen or extrapolated) and to the restart kick.
 2. **While it is in play, which team has it?** The team that took the restart keeps the ball until
-   a player of the other team *holds* it: within <<R>> m of the ball, nearer than any opponent, for
-   <<k>> consecutive frames. Loose balls, passes in flight and brief contests leave possession where
+   a player of the other team *holds* it: within 1.25 m of the ball, nearer than any opponent, for
+   5 consecutive frames (0.2 s). Loose balls, passes in flight and brief contests leave possession where
    it was.
 
-The pipeline never reads the ground truth. Every tuned number was tuned on external data (IDSSE,
-seven professional matches with frame-level labels) or is fixed a priori from the Laws of the Game
-or physics; `docs/PROVENANCE.md`, committed before the re-tuning, gives the source of each.
-One final check on the public five minutes gives **spellF1 <<SPELL>>** and **macroF1 <<MACRO>>**
+The pipeline never reads the ground truth. Every tuned number was tuned on external data (three
+professional matches with frame-level labels from the open IDSSE dataset) or is fixed a priori from
+the Laws of the Game or physics; `docs/PROVENANCE.md`, committed before the re-tuning, gives the source of each.
+One final check on the public five minutes gives **spellF1 0.446** and **macroF1 0.843**
 (published baseline: 0.326 / 0.621 on the same window).
 
 ## 2. Assets and external data
@@ -43,7 +43,7 @@ One final check on the public five minutes gives **spellF1 <<SPELL>>** and **mac
   of graded frames, in long gaps (median 10.7 s). Where it is missing, the broadcast has usually
   cut away and the players are walking.
 - **The broadcast director is a dead-ball detector.** In the fitted model (no labels), the
-  broadcast has cut away on <<CUT_DEAD>> of dead-ball steps but only <<CUT_ALIVE>> of in-play steps:
+  broadcast has cut away on 64% of dead-ball steps but only 4% of in-play steps:
   it cuts to close-ups and replays when play stops, and the replay often runs on for a few seconds
   after the restart.
 - **The two recordings share one clock per half**: tactical = broadcast + 4014 frames in the first
@@ -73,8 +73,8 @@ they show. We use one offset per half (the median of the matches near each mode)
 - Observations at 5 Hz: broadcast live / cut away / no frame; ball not seen / out / still / slow /
   fast; mean player speed over 3 s on a regular 0.5 m/s grid (missing speed is its own bin); change
   in that speed over the next vs last 3 s; inside a Smart Tagging set-piece window.
-- States: alive, and a chain of <<KDEAD>> dead sub-states, so a stoppage lasts at least
-  <<KDEAD_S>> s (the 5th percentile of stoppage length in IDSSE).
+- States: alive, and a chain of 19 dead sub-states, so a stoppage lasts at least
+  3.8 s (the 5th percentile of stoppage length in IDSSE).
 - Estimation without labels: provisional labels from the tracking alone (ball seen > 0.3 m outside
   the lines = dead; ball seen moving faster than 5 m/s at least 1 m inside the lines and 10 s from
   any such sighting = alive) give the starting tables, then unsupervised Baum–Welch re-estimates all
@@ -92,7 +92,7 @@ The HMM's onset trails the real one when the ball is seen leaving the pitch, so 
 2. otherwise the frame the ball left the pitch unseen: last seen within 3 m of a line and moving
    out faster than 2 m/s (or on the line), then not seen for 10 frames, with the crossing
    extrapolated from its speed. Only while play was live: the fastest tenth of the players must
-   have been running faster than <<P90>> m/s in the 2 s before (the 10th percentile of that
+   have been running faster than 2.32 m/s in the 2 s before (the 10th percentile of that
    statistic during live play in IDSSE), because after a whistle the ball often rolls out while
    everybody has stopped.
 
@@ -118,7 +118,7 @@ Kick-offs follow Law 8: the first half by the team of the player nearest the cen
 second half by the other team.
 
 **During play**: possession passes when the other team holds control (nearest player within
-<<R>> m of the seen ball and nearer than any opponent) for <<k>> consecutive frames, dated to the
+1.25 m of the seen ball and nearer than any opponent) for 5 consecutive frames, dated to the
 start of that control. A loose ball, a pass in flight, a deflection or a 50/50 shorter than that
 leaves possession with the last team.
 
@@ -126,9 +126,9 @@ leaves possession with the last team.
 
 | parameter | value | source |
 |---|---|---|
-| possession radius, frames | <<R>> m, <<k>> frames | IDSSE sweep (§6) |
-| minimum stoppage | <<KDEAD_S>> s | IDSSE: 5th percentile of ball-dead run lengths |
-| live-play speed threshold for exits | <<P90>> m/s | IDSSE: 10th percentile of the players' 90th-percentile speed during live play |
+| possession radius, frames | 1.25 m, 5 frames | IDSSE sweep (§6) |
+| minimum stoppage | 3.8 s | IDSSE: 5th percentile of ball-dead run lengths |
+| live-play speed threshold for exits | 2.32 m/s | IDSSE: 10th percentile of the players' 90th-percentile speed during live play |
 | HMM probabilities | estimated | unsupervised Baum–Welch on the match's own automatic observations |
 | speed / trend bins | 0.5 m/s grid | a priori |
 | evidence cap, onset pull-back | none | parameter-free options |
@@ -149,21 +149,36 @@ tracking and on a degraded copy (ball unseen on 10% of live frames in 1–3 s bl
 noise), and the best mean over the six runs is kept (`scripts/tune_external.py`,
 `docs/external_tuning.csv`).
 
-<<SWEEP_TABLE>>
+Mean spellF1 over the six runs (3 matches × clean/degraded); the selected value in bold:
+
+| radius \ frames | 3 | 5 | 8 | 12 | 16 | 25 |
+|---|---|---|---|---|---|---|
+| 0.75 m | 0.569 | 0.537 | 0.472 | 0.422 | 0.397 | 0.345 |
+| 1.00 m | 0.582 | 0.580 | 0.535 | 0.486 | 0.446 | 0.395 |
+| 1.25 m | 0.545 | **0.590** | 0.567 | 0.520 | 0.488 | 0.436 |
+| 1.50 m | 0.484 | 0.571 | 0.584 | 0.543 | 0.510 | 0.464 |
+| 2.00 m | 0.386 | 0.487 | 0.563 | 0.556 | 0.535 | 0.491 |
+
 
 ## 7. Results
 
 One final run of the official scorer (`evaluation/run_evaluation.py`, unchanged) on the public five
 minutes, after the code and parameters were frozen, with 5–95% bootstrap intervals:
 
-<<RESULT_TABLE>>
+| submission | spellF1 | macroF1 | possessions (truth 17) | dead-ball F1 |
+|---|---|---|---|---|
+| **Yamal Fan Boys** | **0.446** (0.34–0.55) | **0.843** (0.73–0.88) | 27 | 0.877 |
+| baseline_smooth50 (published floor) | 0.326 (0.21–0.45) | 0.621 (0.46–0.74) | 26 | 0.323 |
+| baseline_raw | 0.038 | 0.597 | 131 | 0.420 |
+
+Earlier versions scored 0.573 here, but they were tuned on this window; the number above comes from the compliant version, and nothing was changed because of it.
 
 ![Public window: ground truth vs prediction](figures/public_window.png)
 
 ![Our prediction over the whole match](figures/full_match.png)
 
-Over the match we predict <<NPOSS>> possessions and <<NSTOP>> stoppages; the ball is dead on
-<<DEADPCT>> of graded frames.
+Over the match we predict 457 possessions and 118 stoppages; the ball is dead on
+47% of graded frames.
 
 ## 8. Compliance and development history
 
@@ -177,8 +192,7 @@ truth (it runs with `evaluation/gt/` deleted), there are no labels or other data
 provided game, nothing is checked against the video, and every number was re-derived as in §5–6.
 The rules and sources were committed (`docs/PROVENANCE.md`) before the re-tuning, and the public
 window was scored once, at the end. The pipeline was built with the help of an AI coding assistant
-(Claude Code); the organisers indicated that coding agents may see the data, and we asked them to
-confirm this in writing.
+(Claude Code); the organisers indicated that coding agents may see the data.
 
 ## 9. What we tried and dropped
 
@@ -212,7 +226,7 @@ ln -s /path/to/data/bundle data              # or export MTAH_DATA_DIR=/path/to/
 .venv/bin/python scripts/tune_external.py /path/to/idsse
 ```
 
-A fresh clone reproduces the submitted file byte for byte (md5 `<<MD5>>`).
+A fresh clone reproduces the submitted file byte for byte (md5 `c466254810065063dc57bd0529d55189`).
 
 **Credits.** IDSSE: Bassek, M., Rein, R., Weber, H. & Memmert, D. (2025). An integrated dataset of
 spatiotemporal and event data in elite soccer. *Scientific Data* 12, 195.

@@ -1,0 +1,15 @@
+{
+ "ctrl_radius": 1.25,
+ "ctrl_frames": 5,
+ "mean_spell_f1": 0.5904551668850485,
+ "mean_macro_f1": 0.9222565866872147,
+ "dead_run_p5_s": 3.824,
+ "hmm_k_dead": 19,
+ "exit_live_p90": 2.3225760848209376,
+ "n_stoppages": 307,
+ "matches": [
+  "J03WMX",
+  "J03WN1",
+  "J03WPY"
+ ]
+}

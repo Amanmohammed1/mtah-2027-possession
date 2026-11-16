@@ -164,7 +164,7 @@ def _exit(df, lo, hi, max_dist=3.0, min_speed=2.0, gone=10, on_line=0.3, live_p9
 
 
 def refine_boundaries(df, dead, onset_shift=0, search_back=250, search_fwd=50, kick_window=50,
-                      exit_back=150, exit_fwd=25):
+                      exit_back=150, exit_fwd=25, live_p90=2.5):
     """Sharpen the edges of predicted stoppages.
 
     Onset: if the visible ball crossed a line shortly before (or just after) the predicted
@@ -190,7 +190,8 @@ def refine_boundaries(df, dead, onset_shift=0, search_back=250, search_fwd=50, k
                 crossing = f
                 break
         if crossing is None:
-            crossing = _exit(df, max(0, a - exit_back), min(n - 12, a + exit_fwd))
+            crossing = _exit(df, max(0, a - exit_back), min(n - 12, a + exit_fwd),
+                             live_p90=live_p90)
         if crossing is not None and crossing < b:
             new_a = crossing
         else:

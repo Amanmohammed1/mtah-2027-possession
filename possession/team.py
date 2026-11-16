@@ -56,7 +56,11 @@ def hysteresis(ctrl, alive, k, initial=None):
     return lab
 
 
-def restart_team(df, start, before=50, after=10, radius=3.0):
+RESTART_RADIUS = 2.0  # m, Law 15: opponents stand >= 2 m from a throw-in (>= 9.15 m at others)
+WINDOW_BEFORE, WINDOW_AFTER = 50, 10  # frames: 2 s before to 0.4 s after the restart (a priori)
+
+
+def restart_team(df, start, before=WINDOW_BEFORE, after=WINDOW_AFTER, radius=RESTART_RADIUS):
     """Team taking the restart that begins a live stretch at `start`: the team of the player
     nearest the visible ball just before and at the restart (opponents must stand back at
     free kicks, corners and throw-ins). -1 if the ball is not seen near anyone."""
@@ -77,17 +81,18 @@ HALF_L, HALF_W = 105.3 / 2, 68.0 / 2
 BOX_X, BOX_Y = HALF_L - 16.5, 20.16
 
 
-def infer_restart(df, t, start, before=50, after=3, crowd=9):
+def infer_restart(df, t, start, before=WINDOW_BEFORE, crowd=9):
     """Team taking the restart at `start`, and which rule decided it.
 
-    1. ball (seen on the pitch just before the restart) at a corner -> the team attacking that
-       goal; in a penalty area -> goal kick / defensive free kick by the team defending it.
-    2. otherwise the team of the player within 3 m of the ball, nearest first (opponents must
-       stand back at free kicks, corners and throw-ins).
-    3. ball unseen: a crowded penalty area -> the team attacking that goal.
+    1. ball (seen on the pitch in the 2 s before the restart) at a corner -> the team attacking
+       that goal (Law 17); in a penalty area -> goal kick / defensive free kick by the team
+       defending it (Laws 16, 13; penalty area per Law 1).
+    2. otherwise the team of the player within 2 m of the ball, nearest first (Law 15:
+       opponents must stand back at throw-ins, and further at free kicks and corners).
+    3. ball unseen: a crowded penalty area (>= 9 players) -> the team attacking that goal.
     `df.sign` is +1 where the home team attacks towards +x.
     """
-    lo, hi = max(0, start - before), min(len(df), start + after)
+    lo, hi = max(0, start - before), start + 1
     sign = df.sign.values[start]
     bxs, bys = df.bx.values[lo:hi], df.by.values[lo:hi]
     seen = df.ball_seen.values[lo:hi] & (np.abs(bxs) < HALF_L + 0.5) & (np.abs(bys) < HALF_W + 1.5)
@@ -99,7 +104,7 @@ def infer_restart(df, t, start, before=50, after=3, crowd=9):
             return attacker, "corner"
         if abs(bx) > BOX_X and abs(by) < BOX_Y:
             return 1 - attacker, "box"
-    team = restart_team(df, start, 50, 10, 3.0)
+    team = restart_team(df, start)
     if team >= 0:
         return team, "nearest"
     px, py = t["px"][start], t["py"][start]
@@ -110,3 +115,13 @@ def infer_restart(df, t, start, before=50, after=3, crowd=9):
             return (HOME if side == sign else AWAY), "crowd"
     return -1, "none"
 
+
+
+def nearest_to_centre(t, frame):
+    """Team of the tracked player nearest the centre spot at a kick-off frame (Law 8: the kicker
+    stands at the centre mark), or -1 if nobody is tracked."""
+    px, py = t["px"][frame], t["py"][frame]
+    d = np.hypot(px, py)
+    if np.all(np.isnan(d)):
+        return -1
+    return int(t["team"][int(np.nanargmin(d))])

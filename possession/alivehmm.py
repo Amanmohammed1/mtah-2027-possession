@@ -22,8 +22,9 @@ from .features import nan_smooth
 STEP = 5
 LIVE_BINS = 3
 BALL_BINS = 5
-SPEED_EDGES = (0.8, 1.0, 1.2, 1.5, 1.9, 2.4)
-TREND_EDGES = (-0.6, -0.2, 0.2, 0.6)
+# A priori regular grids (0.5 m/s), not fitted to any labels; missing speed gets its own bin.
+SPEED_EDGES = (0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
+TREND_EDGES = (-0.75, -0.25, 0.25, 0.75)
 CHANNELS = ("live", "ball", "speed", "trend", "tag")
 
 
@@ -35,7 +36,8 @@ def observations(df, dx, bt, tags):
     ball = np.where(~vis, 0, np.where(df.ball_out.values > 0.3, 1,
                                       np.where(v < 1.0, 2, np.where(v < 5.0, 3, 4))))
     spd = nan_smooth(df.spd_all.values.astype(np.float64), 75)
-    speed = np.digitize(np.nan_to_num(spd, nan=1.0), SPEED_EDGES)
+    speed = np.where(np.isnan(spd), len(SPEED_EDGES) + 1,
+                     np.digitize(np.nan_to_num(spd), SPEED_EDGES))
     trend = np.nan_to_num(dx.spd_fut75.values - dx.spd_past75.values)
     trend = np.digitize(trend, TREND_EDGES)
     tag = np.zeros(n, dtype=np.int64)
@@ -45,7 +47,7 @@ def observations(df, dx, bt, tags):
 
 
 def n_bins():
-    return np.array([LIVE_BINS, BALL_BINS, len(SPEED_EDGES) + 1, len(TREND_EDGES) + 1, 2])
+    return np.array([LIVE_BINS, BALL_BINS, len(SPEED_EDGES) + 2, len(TREND_EDGES) + 1, 2])
 
 
 # -- model -----------------------------------------------------------------------------------------
@@ -121,7 +123,9 @@ class AliveDeadHMM:
         self.emis = None  # list per channel of (2, bins) probability tables
 
     def init_from_labels(self, obs, dead, weight=1.0, prior=5.0):
-        """Emission tables from labelled frames, smoothed towards uniform."""
+        """Starting emission tables from frames with a provisional dead (1) / alive (0) label,
+        smoothed towards uniform. The pipeline passes tracking-only pseudo-labels; EM then
+        re-estimates everything from the unlabelled match."""
         self.emis = []
         for c, nb in enumerate(n_bins()):
             table = np.full((2, nb), prior)
@@ -156,14 +160,12 @@ class AliveDeadHMM:
             out.append((gamma, xi))
         return out
 
-    def fit(self, obs_list, iters=20, fixed_counts=None, prior=5.0, verbose=False):
-        """Baum-Welch on the emission tables and the two free transition probabilities."""
+    def fit(self, obs_list, iters=20, prior=5.0, verbose=False):
+        """Unsupervised Baum-Welch on the emission tables and the two free transition
+        probabilities. No labels enter."""
         for it in range(iters):
             post = self.posterior(obs_list)
             tables = [np.full((2, nb), prior) for nb in n_bins()]
-            if fixed_counts is not None:
-                for c in range(len(tables)):
-                    tables[c] += fixed_counts[c]
             xi_tot = np.zeros_like(self.T)
             for (gamma, xi), obs in zip(post, obs_list):
                 p_dead = gamma[:, 1:].sum(1)
